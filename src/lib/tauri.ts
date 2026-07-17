@@ -26,3 +26,18 @@ export async function setupDirectories(): Promise<string> {
 export async function importImage(sourcePath: string): Promise<ImportImageResult> {
   return invoke<ImportImageResult>("import_image", { sourcePath });
 }
+
+export interface ProcessResult {
+  uuid: string;
+  processed_path: string;
+  thumbnail_path: string;
+  used_fallback: boolean;
+}
+
+/**
+ * Removes the background of a clothing item using the rembg CLI, and generates a WebP thumbnail.
+ * If rembg is not installed, it falls back to copying the original image.
+ */
+export async function removeBackground(uuid: string, extension: string): Promise<ProcessResult> {
+  return invoke<ProcessResult>("remove_background", { uuid, extension });
+}

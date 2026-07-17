@@ -2,6 +2,7 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 
 mod commands {
     pub mod fs;
+    pub mod image;
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -26,6 +27,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::fs::setup_directories,
             commands::fs::import_image,
+            commands::image::remove_background,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

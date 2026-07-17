@@ -27,4 +27,18 @@ describe("Tauri commands wrapper", () => {
     expect(invoke).toHaveBeenCalledWith("import_image", { sourcePath: "/source/photo.jpg" });
     expect(result).toEqual(mockResult);
   });
+
+  it("removeBackground invokes remove_background command with uuid and extension parameters", async () => {
+    const mockResult = {
+      uuid: "test-uuid-12345",
+      processed_path: "/path/to/processed/test-uuid-12345.webp",
+      thumbnail_path: "/path/to/thumbnails/test-uuid-12345.webp",
+      used_fallback: false,
+    };
+    vi.mocked(invoke).mockResolvedValueOnce(mockResult);
+
+    const result = await import("../lib/tauri").then((m) => m.removeBackground("test-uuid-12345", "jpg"));
+    expect(invoke).toHaveBeenCalledWith("remove_background", { uuid: "test-uuid-12345", extension: "jpg" });
+    expect(result).toEqual(mockResult);
+  });
 });
