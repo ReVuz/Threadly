@@ -21,15 +21,18 @@ export const db = drizzle(
   async (sql, params, method) => {
     const conn = await initDb();
     
+    // Convert Drizzle's '?' placeholders to tauri-plugin-sql's expected '$1', '$2', ... format for SQLite
+    let placeholderIndex = 1;
+    const tauriSql = sql.replace(/\?/g, () => `$${placeholderIndex++}`);
+    
     try {
-      console.log("SQL Proxy Execution:", { sql, params, method });
       if (method === "run") {
-        const res = await conn.execute(sql, params);
+        const res = await conn.execute(tauriSql, params);
         // SQLite proxy expects rows to be returned as an array
         return { rows: [] };
       }
       
-      const rows = await conn.select<any[]>(sql, params);
+      const rows = await conn.select<any[]>(tauriSql, params);
       
       if (method === "all") {
         // Convert array of objects to array of arrays of values for positional mapping
@@ -38,7 +41,7 @@ export const db = drizzle(
       
       return { rows };
     } catch (err) {
-      console.error("Database query failed:", { sql, params, method }, err);
+      console.error("Database query failed:", { sql, tauriSql, params, method }, err);
       throw err;
     }
   }
