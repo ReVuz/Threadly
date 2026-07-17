@@ -26,9 +26,14 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
+          "$APPDATA/**",
           "$APPDATA/**/*",
+          "$LOCALDATA/**",
           "$LOCALDATA/**/*",
-          "$HOME/.local/share/app.threadly.desktop/**/*"
+          "$HOME/.local/share/app.threadly.desktop/**",
+          "$HOME/.local/share/app.threadly.desktop/**/*",
+          "$HOME/.config/app.threadly.desktop/**",
+          "$HOME/.config/app.threadly.desktop/**/*"
         ]
       }
     }
