@@ -17,8 +17,8 @@ pub struct ImportResult {
 
 #[tauri::command]
 pub fn setup_directories(app: tauri::AppHandle) -> Result<String, String> {
-    let app_dir = app.path().app_data_dir()
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+    let app_dir = app.path().app_local_data_dir()
+        .map_err(|e| format!("Failed to get app local data directory: {}", e))?;
 
     let subdirs = vec!["originals", "processed", "thumbnails", "cache"];
     for subdir in subdirs {
@@ -39,8 +39,8 @@ pub fn import_image(app: tauri::AppHandle, source_path: String) -> Result<Import
         return Err(format!("Source file does not exist: {}", source_path));
     }
 
-    let app_dir = app.path().app_data_dir()
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+    let app_dir = app.path().app_local_data_dir()
+        .map_err(|e| format!("Failed to get app local data directory: {}", e))?;
 
     // Create directories just in case they don't exist yet
     let originals_dir = app_dir.join("originals");

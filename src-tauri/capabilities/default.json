@@ -12,7 +12,24 @@
       "identifier": "fs:default",
       "allow": [
         { "path": "$APPDATA/**" },
-        { "path": "$RESOURCE/**" }
+        { "path": "$LOCALDATA/**" },
+        { "path": "$HOME/.local/share/app.threadly.desktop/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$LOCALDATA/**" },
+        { "path": "$HOME/.local/share/app.threadly.desktop/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$LOCALDATA/**" },
+        { "path": "$HOME/.local/share/app.threadly.desktop/**" }
       ]
     }
   ]

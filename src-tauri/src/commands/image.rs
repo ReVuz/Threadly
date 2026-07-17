@@ -16,8 +16,8 @@ pub fn remove_background(
     uuid: String,
     extension: String,
 ) -> Result<ProcessResult, String> {
-    let app_dir = app.path().app_data_dir()
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+    let app_dir = app.path().app_local_data_dir()
+        .map_err(|e| format!("Failed to get app local data directory: {}", e))?;
 
     let original_path = app_dir.join("originals").join(format!("{}.{}", uuid, extension));
     let processed_dir = app_dir.join("processed");
