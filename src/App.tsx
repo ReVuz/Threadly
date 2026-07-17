@@ -9,8 +9,12 @@ import WishlistPage from "./pages/WishlistPage";
 import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 import ItemDetailPage from "./pages/ItemDetailPage";
+import { QueueProvider, useQueue } from "./context/QueueContext";
+import ProcessingProgressBar from "./components/upload/ProcessingProgressBar";
 
-export default function App() {
+function AppContent() {
+  const { queue, isProcessing } = useQueue();
+  
   return (
     <AppLayout>
       <AnimatePresence mode="wait">
@@ -26,6 +30,15 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </AnimatePresence>
+      <ProcessingProgressBar queue={queue} isProcessing={isProcessing} />
     </AppLayout>
+  );
+}
+
+export default function App() {
+  return (
+    <QueueProvider>
+      <AppContent />
+    </QueueProvider>
   );
 }

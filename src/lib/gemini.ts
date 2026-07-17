@@ -134,3 +134,135 @@ Return only the matching values conforming to the requested schema.`,
     throw new Error(`Failed to parse/validate Gemini response: ${err.message}`);
   }
 }
+
+export const GapAnalysisSchema = z.object({
+  colorBalance: z.array(z.object({ color: z.string(), percentage: z.number() })),
+  colorFeedback: z.string(),
+  occasions: z.array(z.object({ name: z.string(), rating: z.number() })), // 1 to 5
+  occasionFeedback: z.string(),
+  missingEssentials: z.array(z.object({ item: z.string(), owned: z.number(), recommended: z.number() })),
+  essentialsFeedback: z.string(),
+  outfitUnlockEstimate: z.string(),
+});
+
+export type GapAnalysisResponse = z.infer<typeof GapAnalysisSchema>;
+
+/**
+ * Generates an AI-powered wardrobe gap analysis using the Gemini 2.5 Flash API.
+ * Takes the list of wardrobe items, prompts Gemini, and returns a structured gap report.
+ */
+export async function generateGapAnalysis(
+  clothesList: Array<{
+    type: string | null;
+    primaryColor: string | null;
+    formality: string | null;
+    material: string | null;
+    pattern: string | null;
+  }>
+): Promise<GapAnalysisResponse> {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("VITE_GEMINI_API_KEY is not defined in environment variables");
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          {
+            text: `Perform a wardrobe gap analysis on the following user clothing items:
+${JSON.stringify(clothesList, null, 2)}
+
+Provide color distribution percentages, occasion coverage ratings (1 to 5 stars), and missing essentials.
+Give actionable, specific suggestions (e.g. recommend buying a navy blazer, Kerala Kasavu Saree, or white sneakers) and estimate how many combinations they unlock.
+Return only matching values conforming to the requested schema.`,
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          colorBalance: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                color: { type: "STRING" },
+                percentage: { type: "NUMBER" },
+              },
+              required: ["color", "percentage"],
+            },
+          },
+          colorFeedback: { type: "STRING" },
+          occasions: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                name: { type: "STRING" },
+                rating: { type: "NUMBER" },
+              },
+              required: ["name", "rating"],
+            },
+          },
+          occasionFeedback: { type: "STRING" },
+          missingEssentials: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                item: { type: "STRING" },
+                owned: { type: "NUMBER" },
+                recommended: { type: "NUMBER" },
+              },
+              required: ["item", "owned", "recommended"],
+            },
+          },
+          essentialsFeedback: { type: "STRING" },
+          outfitUnlockEstimate: { type: "STRING" },
+        },
+        required: [
+          "colorBalance",
+          "colorFeedback",
+          "occasions",
+          "occasionFeedback",
+          "missingEssentials",
+          "essentialsFeedback",
+          "outfitUnlockEstimate"
+        ],
+      },
+    },
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API call failed with status ${response.status}: ${errorText}`);
+  }
+
+  const result = await response.json();
+  const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!responseText) {
+    throw new Error("Empty response received from Gemini API");
+  }
+
+  try {
+    const parsedJson = JSON.parse(responseText);
+    return GapAnalysisSchema.parse(parsedJson);
+  } catch (err: any) {
+    console.error("Gap analysis parse failed. Raw text:", responseText, err);
+    throw new Error(`Failed to parse/validate Gap analysis response: ${err.message}`);
+  }
+}

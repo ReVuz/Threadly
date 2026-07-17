@@ -83,4 +83,47 @@ describe("Gemini API Client", () => {
       "Gemini API call failed with status 400"
     );
   });
+
+  it("generateGapAnalysis constructs payload and returns validated results", async () => {
+    const mockApiResponse = {
+      candidates: [
+        {
+          content: {
+            parts: [
+              {
+                text: JSON.stringify({
+                  colorBalance: [{ color: "black", percentage: 50 }, { color: "blue", percentage: 50 }],
+                  colorFeedback: "Color balance is good.",
+                  occasions: [{ name: "casual", rating: 4 }, { name: "formal", rating: 2 }],
+                  occasionFeedback: "Occasion coverage is moderate.",
+                  missingEssentials: [{ item: "blazer", owned: 0, recommended: 1 }],
+                  essentialsFeedback: "You should buy a blazer.",
+                  outfitUnlockEstimate: "Unlocks 12 combinations.",
+                }),
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockApiResponse,
+    } as Response);
+
+    const result = await import("../lib/gemini").then((m) =>
+      m.generateGapAnalysis([
+        { type: "top", primaryColor: "black", formality: "casual", material: "cotton", pattern: "solid" },
+      ])
+    );
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining("models/gemini-2.5-flash:generateContent?key=test-api-key-12345"),
+      expect.any(Object)
+    );
+
+    expect(result.colorBalance).toEqual([{ color: "black", percentage: 50 }, { color: "blue", percentage: 50 }]);
+    expect(result.missingEssentials).toEqual([{ item: "blazer", owned: 0, recommended: 1 }]);
+  });
 });
