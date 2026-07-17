@@ -2,7 +2,7 @@ import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 import { importImage, type ImportImageResult } from "../../lib/tauri";
-import { db } from "../../lib/db";
+import { db, initDb } from "../../lib/db";
 import { clothes } from "../../../drizzle/schema";
 import { eq } from "drizzle-orm";
 
@@ -84,18 +84,29 @@ export default function UploadZone({ onImportComplete }: UploadZoneProps) {
           continue;
         }
 
-        // 3. Insert new row in clothes table
-        await db.insert(clothes).values({
-          wardrobeId: 1, // Default wardrobe
-          uuid: importResult.uuid,
-          nickname: file.name.split(".")[0],
-          imageOriginal: importResult.original_path,
-          width: importResult.width,
-          height: importResult.height,
-          fileSize: importResult.file_size,
-          checksum: importResult.checksum,
-          aiStatus: "PENDING",
-        });
+        // 3. Insert new row in clothes table using raw SQL to avoid Drizzle/sqlx issues
+        // with autoincrement 'id = null' and '(CURRENT_TIMESTAMP)' expressions
+        const now = new Date().toISOString().replace("T", " ").slice(0, 19);
+        const conn = await initDb();
+        await conn.execute(
+          `INSERT INTO clothes
+            (wardrobe_id, uuid, nickname, image_original, width, height, file_size, checksum, ai_status, created_at, updated_at)
+           VALUES
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            1,
+            importResult.uuid,
+            file.name.split(".")[0],
+            importResult.original_path,
+            importResult.width,
+            importResult.height,
+            importResult.file_size,
+            importResult.checksum,
+            "PENDING",
+            now,
+            now,
+          ]
+        );
 
         updateFileStatus(file.path, "completed", 100);
         completedImports.push(importResult);

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { db } from "../lib/db";
+import { db, initDb } from "../lib/db";
 import { clothes, tags, clothTags, seasons, clothSeasons } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -104,24 +104,21 @@ export default function ItemDetailPage() {
   const handleSaveChanges = async () => {
     if (!item) return;
     try {
-      await db
-        .update(clothes)
-        .set({
-          nickname,
-          type,
-          primaryColor,
-          formality,
-          weatherSuitability,
-          material,
-          pattern,
-          fit,
-        })
-        .where(eq(clothes.id, item.id));
-      
+      const conn = await initDb();
+      const now = new Date().toISOString().replace("T", " ").slice(0, 19);
+      await conn.execute(
+        `UPDATE clothes SET nickname = ?, type = ?, primary_color = ?, formality = ?,
+         weather_suitability = ?, material = ?, pattern = ?, fit = ?, updated_at = ?
+         WHERE id = ?`,
+        [nickname, type || null, primaryColor || null, formality || null,
+         weatherSuitability || null, material || null, pattern || null, fit || null,
+         now, item.id]
+      );
       setIsEditing(false);
       fetchDetails();
     } catch (err) {
       console.error("Failed to save changes:", err);
+      alert("Failed to save changes: " + String(err));
     }
   };
 
@@ -174,21 +171,25 @@ export default function ItemDetailPage() {
     if (!confirmDelete) return;
 
     try {
-      // 1. Delete files from disk using Tauri FS
+      // 1. Delete files from disk (ignore errors — file might already be gone)
       try {
         await remove(item.imageOriginal);
         if (item.imageProcessed) await remove(item.imageProcessed);
         if (item.imageThumbnail) await remove(item.imageThumbnail);
       } catch (fsErr) {
-        console.warn("Some image files could not be deleted from disk:", fsErr);
+        console.warn("File deletion warning (non-fatal):", fsErr);
       }
 
-      // 2. Delete row from SQLite
-      await db.delete(clothes).where(eq(clothes.id, item.id));
+      // 2. Delete from SQLite using raw SQL
+      const conn = await initDb();
+      await conn.execute("DELETE FROM cloth_tags WHERE cloth_id = ?", [item.id]);
+      await conn.execute("DELETE FROM cloth_seasons WHERE cloth_id = ?", [item.id]);
+      await conn.execute("DELETE FROM clothes WHERE id = ?", [item.id]);
 
       navigate("/wardrobe");
     } catch (err) {
       console.error("Failed to delete item:", err);
+      alert("Failed to delete item: " + String(err));
     }
   };
 

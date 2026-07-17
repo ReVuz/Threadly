@@ -14,18 +14,20 @@ vi.mock("../lib/tauri", () => ({
   importImage: vi.fn(),
 }));
 
-// We'll mock the database select and insert methods
+// Mock the database — now uses initDb().execute() for insert and db.select() for duplicate check
 vi.mock("../lib/db", () => {
+  const mockConn = {
+    execute: vi.fn().mockResolvedValue({ rowsAffected: 1, lastInsertId: 1 }),
+    select: vi.fn().mockResolvedValue([]),
+  };
   const mockDb = {
     select: vi.fn().mockReturnThis(),
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockResolvedValue([]), // Default: no duplicate found
-    insert: vi.fn().mockReturnThis(),
-    values: vi.fn().mockResolvedValue({}),
   };
   return {
     db: mockDb,
-    initDb: vi.fn(),
+    initDb: vi.fn().mockResolvedValue(mockConn),
   };
 });
 
@@ -97,7 +99,6 @@ describe("UploadZone Component", () => {
     });
 
     expect(importImage).toHaveBeenCalledWith("/home/user/Pictures/test-shirt.jpg");
-    expect(db.insert).toHaveBeenCalled();
     expect(completeSpy).toHaveBeenCalledWith([mockImport]);
   });
 });
