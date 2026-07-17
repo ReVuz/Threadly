@@ -1,0 +1,33 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Build outputs
+dist
+dist-ssr
+*.local
+
+# Node
+node_modules
+
+# Tauri
+src-tauri/target
+
+# Environment (API keys — never commit)
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/settings.json
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Drizzle generated (keep migrations, not the meta)
+drizzle/.drizzle/
+
+# Test coverage
+coverage
