@@ -1,5 +1,9 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+mod commands {
+    pub mod fs;
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Define database migrations using Drizzle's generated SQL
@@ -19,7 +23,10 @@ pub fn run() {
         )
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![])
+        .invoke_handler(tauri::generate_handler![
+            commands::fs::setup_directories,
+            commands::fs::import_image,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
