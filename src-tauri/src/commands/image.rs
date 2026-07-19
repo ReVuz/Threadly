@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 use tauri::Manager;
 
@@ -8,6 +9,18 @@ pub struct ProcessResult {
     pub processed_path: String,
     pub thumbnail_path: String,
     pub used_fallback: bool,
+}
+
+fn rembg_candidates() -> Vec<PathBuf> {
+    let mut candidates = vec![PathBuf::from("rembg")];
+
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        candidates.push(home.join(".local/bin/rembg"));
+        candidates.push(home.join(".pyenv/shims/rembg"));
+    }
+
+    candidates
 }
 
 #[tauri::command]
@@ -40,23 +53,32 @@ pub fn remove_background(
         return Err(format!("Original image not found: {:?}", original_path));
     }
 
-    // Try executing rembg CLI
+    // Try executing rembg CLI. GUI apps may not inherit the user's shell PATH,
+    // so also check common per-user install locations.
     let mut used_fallback = false;
-    let mut rembg_cmd = Command::new("rembg");
-    rembg_cmd.args(&["i", original_path.to_str().unwrap(), processed_path.to_str().unwrap()]);
+    let mut rembg_succeeded = false;
 
-    match rembg_cmd.output() {
-        Ok(output) if output.status.success() => {
-            // Background removal succeeded
+    for rembg_path in rembg_candidates() {
+        let output = Command::new(&rembg_path)
+            .args(&["i", original_path.to_str().unwrap(), processed_path.to_str().unwrap()])
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                rembg_succeeded = true;
+                break;
+            }
+            Ok(_) | Err(_) => {}
         }
-        _ => {
-            // Fallback: If rembg fails or is not installed, open the original image and save it as WebP directly
-            used_fallback = true;
-            let img = image::open(&original_path)
-                .map_err(|e| format!("Fallback failed: cannot open original image: {}", e))?;
-            img.save(&processed_path)
-                .map_err(|e| format!("Fallback failed: cannot save processed image as WebP: {}", e))?;
-        }
+    }
+
+    if !rembg_succeeded {
+        // Fallback: If rembg fails or is not installed, open the original image and save it as WebP directly.
+        used_fallback = true;
+        let img = image::open(&original_path)
+            .map_err(|e| format!("Fallback failed: cannot open original image: {}", e))?;
+        img.save(&processed_path)
+            .map_err(|e| format!("Fallback failed: cannot save processed image as WebP: {}", e))?;
     }
 
     // Generate thumbnail (max 300x300 WebP)

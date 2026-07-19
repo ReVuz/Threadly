@@ -42,60 +42,61 @@ export function useProcessQueue() {
     }
   }, []);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      refreshQueue();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [refreshQueue]);
+
   // Run the processing queue sequentially
   useEffect(() => {
     if (isProcessing || queue.length === 0) return;
 
-    const processNext = async () => {
+    const processPendingItems = async () => {
       setIsProcessing(true);
-      const nextItem = queue.find((item) => item.status === "pending");
-      
-      if (!nextItem) {
-        setIsProcessing(false);
-        return;
-      }
-
-      setCurrentId(nextItem.id);
-      setQueue((prev) =>
-        prev.map((item) => (item.id === nextItem.id ? { ...item, status: "processing" } : item))
-      );
-
       try {
-        // Extract extension from original path
-        const ext = nextItem.imageOriginal.split(".").pop() || "png";
-        
-        // Call tauri background removal + thumbnail command
-        const result = await removeBackground(nextItem.uuid, ext);
+        for (const nextItem of queue.filter((item) => item.status === "pending")) {
+          setCurrentId(nextItem.id);
+          setQueue((prev) =>
+            prev.map((item) => (item.id === nextItem.id ? { ...item, status: "processing" } : item))
+          );
 
-        // Update database row
-        await db
-          .update(clothes)
-          .set({
-            imageProcessed: result.processed_path,
-            imageThumbnail: result.thumbnail_path,
-          })
-          .where(eq(clothes.id, nextItem.id));
+          try {
+            const ext = nextItem.imageOriginal.split(".").pop() || "png";
+            const result = await removeBackground(nextItem.uuid, ext);
 
-        setQueue((prev) =>
-          prev.map((item) =>
-            item.id === nextItem.id
-              ? { ...item, status: "completed", usedFallback: result.used_fallback }
-              : item
-          )
-        );
-      } catch (err) {
-        console.error(`Failed to process background for item ${nextItem.id}:`, err);
-        setQueue((prev) =>
-          prev.map((item) => (item.id === nextItem.id ? { ...item, status: "failed" } : item))
-        );
+            await db
+              .update(clothes)
+              .set({
+                imageProcessed: result.processed_path,
+                imageThumbnail: result.thumbnail_path,
+              })
+              .where(eq(clothes.id, nextItem.id));
+
+            setQueue((prev) =>
+              prev.map((item) =>
+                item.id === nextItem.id
+                  ? { ...item, status: "completed", usedFallback: result.used_fallback }
+                  : item
+              )
+            );
+          } catch (err) {
+            console.error(`Failed to process background for item ${nextItem.id}:`, err);
+            setQueue((prev) =>
+              prev.map((item) => (item.id === nextItem.id ? { ...item, status: "failed" } : item))
+            );
+          }
+        }
       } finally {
         setCurrentId(null);
         setIsProcessing(false);
       }
     };
 
-    processNext();
-  }, [queue, isProcessing]);
+    processPendingItems();
+  }, [queue, isProcessing, refreshQueue]);
 
   // Triggered when new uploads complete
   const addToQueue = useCallback(() => {

@@ -18,6 +18,12 @@ export function useGeminiAnalysis() {
 
   const refreshAnalysisQueue = useCallback(async () => {
     try {
+      // Recover work abandoned by an app restart while Gemini was running.
+      await db
+        .update(clothes)
+        .set({ aiStatus: "PENDING" })
+        .where(eq(clothes.aiStatus, "PROCESSING"));
+
       const items = await db
         .select({
           id: clothes.id,
@@ -101,7 +107,7 @@ export function useGeminiAnalysis() {
 
         for (const seasonName of seasonNames) {
           // Find or create season
-          let seasonRow = await db
+          const seasonRow = await db
             .select()
             .from(seasons)
             .where(eq(seasons.name, seasonName));
@@ -138,7 +144,7 @@ export function useGeminiAnalysis() {
           // Capitalize first letter for display elegance
           const formattedTag = tagName.charAt(0).toUpperCase() + tagName.slice(1);
           
-          let tagRow = await db
+          const tagRow = await db
             .select()
             .from(tags)
             .where(eq(tags.name, formattedTag));

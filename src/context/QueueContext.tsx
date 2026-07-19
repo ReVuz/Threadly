@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, ReactNode } from "react";
 import { useProcessQueue, type QueueItem } from "../hooks/useProcessQueue";
 import { useGeminiAnalysis, type AnalysisQueueItem } from "../hooks/useGeminiAnalysis";
 
@@ -21,6 +21,19 @@ const QueueContext = createContext<QueueContextType | undefined>(undefined);
 export function QueueProvider({ children }: { children: ReactNode }) {
   const processQueue = useProcessQueue();
   const geminiQueue = useGeminiAnalysis();
+  const { refreshQueue } = processQueue;
+  const { refreshAnalysisQueue } = geminiQueue;
+
+  const refreshAll = useCallback(async () => {
+    await refreshQueue();
+    await refreshAnalysisQueue();
+  }, [refreshQueue, refreshAnalysisQueue]);
+
+  // Pick up any backlog left from a previous app session.
+  useEffect(() => {
+    refreshAll();
+  }, [refreshAll]);
+
 
   // Automatically start background removal when queue loads items
   useEffect(() => {
@@ -37,11 +50,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [processQueue.isProcessing]);
-
-  const refreshAll = () => {
-    processQueue.refreshQueue();
-    geminiQueue.refreshAnalysisQueue();
-  };
 
   return (
     <QueueContext.Provider
