@@ -34,14 +34,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     refreshAll();
   }, [refreshAll]);
 
-
-  // Automatically start background removal when queue loads items
-  useEffect(() => {
-    if (processQueue.queue.some((item) => item.status === "pending") && !processQueue.isProcessing) {
-      // Background removal process runs automatically in hook useEffect
-    }
-  }, [processQueue.queue, processQueue.isProcessing]);
-
   // Automatically trigger Gemini analysis queue refresh when background processing finishes
   useEffect(() => {
     if (!processQueue.isProcessing) {

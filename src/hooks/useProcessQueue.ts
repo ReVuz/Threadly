@@ -37,6 +37,7 @@ export function useProcessQueue() {
           status: "pending",
         }))
       );
+      console.info(`[Threadly] Background queue loaded ${pendingItems.length} pending item(s)`);
     } catch (err) {
       console.error("Failed to load processing queue:", err);
     }
@@ -52,12 +53,14 @@ export function useProcessQueue() {
 
   // Run the processing queue sequentially
   useEffect(() => {
-    if (isProcessing || queue.length === 0) return;
+    const pendingItems = queue.filter((item) => item.status === "pending");
+    if (isProcessing || pendingItems.length === 0) return;
 
     const processPendingItems = async () => {
       setIsProcessing(true);
       try {
-        for (const nextItem of queue.filter((item) => item.status === "pending")) {
+        for (const nextItem of pendingItems) {
+          console.info(`[Threadly] Removing background for item ${nextItem.id}`);
           setCurrentId(nextItem.id);
           setQueue((prev) =>
             prev.map((item) => (item.id === nextItem.id ? { ...item, status: "processing" } : item))
@@ -66,6 +69,7 @@ export function useProcessQueue() {
           try {
             const ext = nextItem.imageOriginal.split(".").pop() || "png";
             const result = await removeBackground(nextItem.uuid, ext);
+            console.info(`[Threadly] Background removal finished for item ${nextItem.id}`, result);
 
             await db
               .update(clothes)

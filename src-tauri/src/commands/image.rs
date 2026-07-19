@@ -48,6 +48,7 @@ pub fn remove_background(
 
     let processed_path = processed_dir.join(format!("{}.webp", uuid));
     let thumbnail_path = thumbnails_dir.join(format!("{}.webp", uuid));
+    let rembg_output_path = processed_dir.join(format!("{}.rembg.png", uuid));
 
     if !original_path.exists() {
         return Err(format!("Original image not found: {:?}", original_path));
@@ -60,11 +61,16 @@ pub fn remove_background(
 
     for rembg_path in rembg_candidates() {
         let output = Command::new(&rembg_path)
-            .args(&["i", original_path.to_str().unwrap(), processed_path.to_str().unwrap()])
+            .args(&["i", original_path.to_str().unwrap(), rembg_output_path.to_str().unwrap()])
             .output();
 
         match output {
             Ok(output) if output.status.success() => {
+                let img = image::open(&rembg_output_path)
+                    .map_err(|e| format!("rembg produced unreadable image output: {}", e))?;
+                img.save(&processed_path)
+                    .map_err(|e| format!("Failed to convert rembg output to WebP: {}", e))?;
+                let _ = fs::remove_file(&rembg_output_path);
                 rembg_succeeded = true;
                 break;
             }

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { motion, AnimatePresence } from "framer-motion";
-import { importImage, type ImportImageResult } from "../../lib/tauri";
+import { importImage, removeBackground, type ImportImageResult } from "../../lib/tauri";
 import { db, initDb } from "../../lib/db";
-import { clothes } from "../../../drizzle/schema";
+import { clothes, tags, clothTags, seasons, clothSeasons } from "../../../drizzle/schema";
 import { eq } from "drizzle-orm";
+import { analyzeClothingImage } from "../../lib/gemini";
 
 interface UploadZoneProps {
   onImportComplete?: (items: ImportImageResult[]) => void;
@@ -13,9 +14,89 @@ interface UploadZoneProps {
 interface UploadingFile {
   path: string;
   name: string;
-  status: "pending" | "importing" | "duplicate" | "completed" | "failed";
+  status: "pending" | "importing" | "duplicate" | "completed" | "processing_failed" | "failed";
   error?: string;
   progress: number;
+}
+
+function getErrorMessage(err: unknown) {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return JSON.stringify(err);
+}
+
+async function analyzeImportedItem(itemId: number, imagePath: string) {
+  await db
+    .update(clothes)
+    .set({ aiStatus: "PROCESSING" })
+    .where(eq(clothes.id, itemId));
+
+  const analysisResult = await analyzeClothingImage(imagePath);
+
+  await db
+    .update(clothes)
+    .set({
+      type: analysisResult.type,
+      primaryColor: analysisResult.primaryColor,
+      secondaryColor: analysisResult.secondaryColor || null,
+      pattern: analysisResult.pattern || null,
+      material: analysisResult.material || null,
+      fit: analysisResult.fit || null,
+      formality: analysisResult.formality,
+      sleeveLength: analysisResult.sleeveLength || null,
+      neckline: analysisResult.neckline || null,
+      weatherSuitability: analysisResult.weatherSuitability,
+      nickname: analysisResult.suggestedName,
+      aiStatus: "COMPLETED",
+      aiAnalyzedAt: new Date().toISOString(),
+      aiRawJson: JSON.stringify(analysisResult),
+    })
+    .where(eq(clothes.id, itemId));
+
+  const seasonNames =
+    analysisResult.weatherSuitability === "warm-weather"
+      ? ["Summer", "Monsoon"]
+      : analysisResult.weatherSuitability === "cold-weather"
+        ? ["Winter", "Autumn"]
+        : ["Summer", "Winter", "Monsoon", "Autumn"];
+
+  for (const seasonName of seasonNames) {
+    const seasonRow = await db.select().from(seasons).where(eq(seasons.name, seasonName));
+    let seasonId: number;
+
+    if (seasonRow.length === 0) {
+      await db.insert(seasons).values({ name: seasonName });
+      const created = await db.select().from(seasons).where(eq(seasons.name, seasonName));
+      seasonId = created[0].id;
+    } else {
+      seasonId = seasonRow[0].id;
+    }
+
+    await db.insert(clothSeasons).values({ clothId: itemId, seasonId }).onConflictDoNothing();
+  }
+
+  const autoTags = [
+    analysisResult.formality,
+    analysisResult.material,
+    analysisResult.pattern,
+    analysisResult.fit,
+  ].filter((tagName): tagName is string => Boolean(tagName));
+
+  for (const tagName of autoTags) {
+    const formattedTag = tagName.charAt(0).toUpperCase() + tagName.slice(1);
+    const tagRow = await db.select().from(tags).where(eq(tags.name, formattedTag));
+    let tagId: number;
+
+    if (tagRow.length === 0) {
+      await db.insert(tags).values({ name: formattedTag });
+      const created = await db.select().from(tags).where(eq(tags.name, formattedTag));
+      tagId = created[0].id;
+    } else {
+      tagId = tagRow[0].id;
+    }
+
+    await db.insert(clothTags).values({ clothId: itemId, tagId }).onConflictDoNothing();
+  }
 }
 
 export default function UploadZone({ onImportComplete }: UploadZoneProps) {
@@ -108,11 +189,47 @@ export default function UploadZone({ onImportComplete }: UploadZoneProps) {
           ]
         );
 
+        const inserted = await db
+          .select({ id: clothes.id })
+          .from(clothes)
+          .where(eq(clothes.checksum, importResult.checksum));
+
+        const insertedId = inserted[0]?.id;
+        if (insertedId) {
+          updateFileStatus(file.path, "importing", 80);
+
+          try {
+            const ext = importResult.original_path.split(".").pop() || "png";
+            const backgroundResult = await removeBackground(importResult.uuid, ext);
+
+            await db
+              .update(clothes)
+              .set({
+                imageProcessed: backgroundResult.processed_path,
+                imageThumbnail: backgroundResult.thumbnail_path,
+              })
+              .where(eq(clothes.id, insertedId));
+
+            updateFileStatus(file.path, "importing", 90);
+            await analyzeImportedItem(insertedId, backgroundResult.processed_path);
+          } catch (processingErr) {
+            const message = getErrorMessage(processingErr);
+            console.error("Post-import processing failed for " + file.name, processingErr);
+            await db
+              .update(clothes)
+              .set({ aiStatus: "FAILED" })
+              .where(eq(clothes.id, insertedId));
+            updateFileStatus(file.path, "processing_failed", 100, message);
+            completedImports.push(importResult);
+            continue;
+          }
+        }
+
         updateFileStatus(file.path, "completed", 100);
         completedImports.push(importResult);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Import failed for " + file.name, err);
-        updateFileStatus(file.path, "failed", 100, err.message || "Import failed");
+        updateFileStatus(file.path, "failed", 100, getErrorMessage(err) || "Import failed");
       }
     }
 
@@ -231,7 +348,7 @@ export default function UploadZone({ onImportComplete }: UploadZoneProps) {
                   letterSpacing: "0.05em",
                 }}
               >
-                Queue ({files.filter((f) => f.status === "completed").length}/{files.length} done)
+                Queue ({files.filter((f) => f.status === "completed" || f.status === "processing_failed").length}/{files.length} done)
               </span>
               {!isProcessing && (
                 <button className="btn btn-ghost btn-sm" onClick={clearQueue}>
@@ -290,6 +407,14 @@ export default function UploadZone({ onImportComplete }: UploadZoneProps) {
                           Error
                         </span>
                       )}
+                      {file.status === "processing_failed" && (
+                        <span
+                          className="badge"
+                          style={{ background: "var(--warning-bg)", color: "var(--text-secondary)" }}
+                        >
+                          Processing Failed
+                        </span>
+                      )}
                     </div>
 
                     {/* Progress Bar */}
@@ -329,6 +454,9 @@ export default function UploadZone({ onImportComplete }: UploadZoneProps) {
                   {/* Status Indicator */}
                   <div>
                     {file.status === "completed" && (
+                      <span className="badge badge-success">Imported</span>
+                    )}
+                    {file.status === "processing_failed" && (
                       <span className="badge badge-success">Imported</span>
                     )}
                     {file.status === "importing" && (
