@@ -1,6 +1,9 @@
 import { readFile } from "@tauri-apps/plugin-fs";
 import { z } from "zod";
 
+// Gemini model — gemini-3-flash-preview is available under this API key's quota
+const GEMINI_MODEL = "gemini-3-flash-preview";
+
 // Zod schema for validating the Gemini response
 export const GeminiResponseSchema = z.object({
   type: z.enum(["dress", "top", "bottom", "jacket", "co-ord", "ethnic", "other"]),
@@ -46,8 +49,8 @@ export async function analyzeClothingImage(filePath: string): Promise<GeminiResp
   const ext = filePath.split(".").pop()?.toLowerCase() || "webp";
   const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
 
-  // 2. Call Gemini 2.5 Flash API
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  // 2. Call Gemini API
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
   
   const payload = {
     contents: [
@@ -113,13 +116,20 @@ Return only the matching values conforming to the requested schema.`,
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API call failed with status ${response.status}: ${errorText}`);
+    const errorBody = await response.json().catch(() => null);
+    const errorMessage = errorBody?.error?.message || `HTTP ${response.status}`;
+    if (response.status === 404) {
+      throw new Error(`Gemini model '${GEMINI_MODEL}' not available for this API key. Error: ${errorMessage}`);
+    }
+    if (response.status === 429) {
+      throw new Error(`Gemini API quota exceeded — check billing at https://ai.dev/rate-limit. Error: ${errorMessage}`);
+    }
+    throw new Error(`Gemini API call failed (${response.status}): ${errorMessage}`);
   }
 
   const result = await response.json();
   
-  // Extract text response
+  // Extract response — when responseMimeType is application/json, text field contains a JSON string
   const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!responseText) {
     throw new Error("Empty response received from Gemini API");
@@ -165,7 +175,7 @@ export async function generateGapAnalysis(
     throw new Error("VITE_GEMINI_API_KEY is not defined in environment variables");
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
   const payload = {
     contents: [
@@ -248,8 +258,15 @@ Return only matching values conforming to the requested schema.`,
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API call failed with status ${response.status}: ${errorText}`);
+    const errorBody = await response.json().catch(() => null);
+    const errorMessage = errorBody?.error?.message || `HTTP ${response.status}`;
+    if (response.status === 404) {
+      throw new Error(`Gemini model '${GEMINI_MODEL}' not available for this API key. Error: ${errorMessage}`);
+    }
+    if (response.status === 429) {
+      throw new Error(`Gemini API quota exceeded — check billing at https://ai.dev/rate-limit. Error: ${errorMessage}`);
+    }
+    throw new Error(`Gemini API call failed (${response.status}): ${errorMessage}`);
   }
 
   const result = await response.json();

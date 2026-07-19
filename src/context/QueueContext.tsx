@@ -29,19 +29,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     }
   }, [processQueue.queue, processQueue.isProcessing]);
 
-  // Automatically start Gemini analysis once background removal completes for any item
+  // Automatically trigger Gemini analysis queue refresh when background processing finishes
   useEffect(() => {
-    const hasPendingAi = geminiQueue.analysisQueue.some((item) => item.aiStatus === "PENDING");
-    
-    // Refresh the AI analysis queue when background removal completes items
     if (!processQueue.isProcessing) {
+      // Background removal just finished (or is idle) — pick up new items for AI analysis
       geminiQueue.refreshAnalysisQueue();
     }
-    
-    if (hasPendingAi && !geminiQueue.isAnalyzing) {
-      geminiQueue.startAnalysis();
-    }
-  }, [processQueue.isProcessing, geminiQueue.analysisQueue, geminiQueue.isAnalyzing]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processQueue.isProcessing]);
 
   const refreshAll = () => {
     processQueue.refreshQueue();

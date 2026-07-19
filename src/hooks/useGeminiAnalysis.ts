@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { db } from "../lib/db";
 import { clothes, tags, clothTags, seasons, clothSeasons } from "../../drizzle/schema";
-import { eq, and, isNotNull, sql } from "drizzle-orm";
+import { eq, and, isNotNull } from "drizzle-orm";
 import { analyzeClothingImage } from "../lib/gemini";
 
 export interface AnalysisQueueItem {
@@ -47,7 +47,7 @@ export function useGeminiAnalysis() {
       const nextItem = queue.find((item) => item.aiStatus === "PENDING");
       
       if (!nextItem || !nextItem.imageProcessed) {
-        setIsRunning(false);
+        setIsAnalyzing(false);
         return;
       }
 
@@ -108,10 +108,10 @@ export function useGeminiAnalysis() {
           
           let seasonId: number;
           if (seasonRow.length === 0) {
-            const insertRes = await db
+            await db
               .insert(seasons)
               .values({ name: seasonName });
-            // Retrieve ID (tauri-plugin-sql execute returns row ID)
+            // Retrieve ID after insert
             const check = await db.select().from(seasons).where(eq(seasons.name, seasonName));
             seasonId = check[0].id;
           } else {
@@ -180,11 +180,6 @@ export function useGeminiAnalysis() {
 
     analyzeNext();
   }, [queue, isAnalyzing]);
-
-  // Private helper to state toggle
-  const setIsRunning = (val: boolean) => {
-    setIsAnalyzing(val);
-  };
 
   const startAnalysis = useCallback(() => {
     refreshAnalysisQueue();
