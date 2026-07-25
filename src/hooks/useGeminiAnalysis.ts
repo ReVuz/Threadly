@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { db } from "../lib/db";
+import { db, syncFts } from "../lib/db";
 import { clothes, tags, clothTags, seasons, clothSeasons } from "../../drizzle/schema";
 import { eq, and, isNotNull } from "drizzle-orm";
 import { analyzeClothingImage } from "../lib/gemini";
@@ -157,12 +157,14 @@ export function useGeminiAnalysis() {
           } else {
             tagId = tagRow[0].id;
           }
-
           await db
             .insert(clothTags)
             .values({ clothId: itemId, tagId })
             .onConflictDoNothing();
         }
+
+        // Synchronize search index
+        await syncFts(itemId);
 
         setQueue((prev) =>
           prev.map((item) => (item.id === itemId ? { ...item, aiStatus: "COMPLETED" } : item))

@@ -1,6 +1,8 @@
-import { NavLink, useLocation } from "react-router-dom";
-import { motion } from "framer-motion";
+import { useState, useRef, useEffect } from "react";
 import type { ReactNode } from "react";
+import { NavLink, useLocation } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { useWardrobe } from "../../context/WardrobeContext";
 
 const NAV_ITEMS = [
   { path: "/home", label: "Home", icon: HomeIcon },
@@ -26,40 +28,232 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
 function Sidebar() {
   const location = useLocation();
+  const { activeWardrobeId, activeWardrobeName, wardrobesList, setActiveWardrobeId, createWardrobe } = useWardrobe();
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleCreate = async () => {
+    const name = prompt("Enter a name for your new wardrobe collection:");
+    if (name && name.trim()) {
+      await createWardrobe(name.trim());
+      setIsOpen(false);
+    }
+  };
 
   return (
     <nav className="sidebar">
-      {/* Logo */}
+      {/* Logo & Switcher */}
       <div
         style={{
-          padding: "28px 20px 24px",
+          padding: "24px 20px 20px",
           borderBottom: "1px solid var(--border-subtle)",
         }}
+        ref={dropdownRef}
       >
         <h1
           style={{
             fontFamily: "var(--font-display)",
             fontSize: "1.625rem",
-            fontWeight: 600,
-            color: "var(--primary)",
+            fontWeight: 500,
+            color: "var(--text)",
             letterSpacing: "-0.02em",
             lineHeight: 1,
           }}
         >
           Threadly
         </h1>
-        <p
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "0.7rem",
-            color: "var(--text-tertiary)",
-            marginTop: 5,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-          }}
-        >
-          Your Wardrobe
-        </p>
+        
+        {/* Switcher Dropdown */}
+        <div style={{ position: "relative", marginTop: 8 }}>
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              padding: "4px 8px",
+              marginLeft: -8,
+              borderRadius: 6,
+              outline: "none",
+              width: "100%",
+              textAlign: "left",
+              transition: "background var(--duration-fast) var(--ease-out)",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = "var(--surface-raised)"}
+            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+          >
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: "0.725rem",
+                color: "var(--text-secondary)",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                fontWeight: 500,
+              }}
+            >
+              {activeWardrobeName}
+            </span>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--text-tertiary)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{
+                transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+                transition: "transform var(--duration-base) var(--ease-out)",
+                flexShrink: 0,
+              }}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+
+          <AnimatePresence>
+            {isOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.12 }}
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  left: -8,
+                  zIndex: 50,
+                  width: "calc(100% + 16px)",
+                  background: "var(--surface)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: 8,
+                  boxShadow: "var(--shadow-md)",
+                  marginTop: 4,
+                  overflow: "hidden",
+                  padding: "4px 0",
+                }}
+              >
+                <div style={{ maxHeight: 180, overflowY: "auto" }}>
+                  {wardrobesList.map((w) => {
+                    const isSelected = w.id === activeWardrobeId;
+                    return (
+                      <button
+                        key={w.id}
+                        onClick={() => {
+                          setActiveWardrobeId(w.id);
+                          setIsOpen(false);
+                        }}
+                        style={{
+                          width: "100%",
+                          textAlign: "left",
+                          background: isSelected ? "var(--surface-raised)" : "transparent",
+                          border: "none",
+                          padding: "8px 12px",
+                          fontFamily: "var(--font-body)",
+                          fontSize: "0.8125rem",
+                          color: isSelected ? "var(--primary)" : "var(--text-secondary)",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          transition: "all 100ms ease-out",
+                        }}
+                        onMouseEnter={e => {
+                          if (!isSelected) {
+                            e.currentTarget.style.background = "var(--surface-raised)";
+                            e.currentTarget.style.color = "var(--text)";
+                          }
+                        }}
+                        onMouseLeave={e => {
+                          if (!isSelected) {
+                            e.currentTarget.style.background = "transparent";
+                            e.currentTarget.style.color = "var(--text-secondary)";
+                          }
+                        }}
+                      >
+                        <span style={{ fontWeight: isSelected ? 500 : 400 }}>{w.name}</span>
+                        {isSelected && (
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="var(--accent)"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div
+                  style={{
+                    borderTop: "1px solid var(--border-subtle)",
+                    marginTop: 4,
+                    paddingTop: 4,
+                  }}
+                >
+                  <button
+                    onClick={handleCreate}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      background: "transparent",
+                      border: "none",
+                      padding: "8px 12px",
+                      fontFamily: "var(--font-body)",
+                      fontSize: "0.8125rem",
+                      color: "var(--accent)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = "var(--surface-raised)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                  >
+                    <svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="var(--accent)"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    <span>New Collection</span>
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* Nav items */}

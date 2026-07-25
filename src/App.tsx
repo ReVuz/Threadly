@@ -10,6 +10,7 @@ import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 import ItemDetailPage from "./pages/ItemDetailPage";
 import { QueueProvider, useQueue } from "./context/QueueContext";
+import { WardrobeProvider } from "./context/WardrobeContext";
 import ProcessingProgressBar from "./components/upload/ProcessingProgressBar";
 
 function AppContent() {
@@ -37,8 +38,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <QueueProvider>
-      <AppContent />
-    </QueueProvider>
+    <WardrobeProvider>
+      <QueueProvider>
+        <AppContent />
+      </QueueProvider>
+    </WardrobeProvider>
   );
 }

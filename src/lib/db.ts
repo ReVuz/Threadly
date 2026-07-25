@@ -12,14 +12,139 @@ export async function initDb() {
     await dbInstance.execute(
       "INSERT OR IGNORE INTO wardrobes (id, name) VALUES (1, 'My Wardrobe')"
     );
+
+    // Create FTS5 virtual table
+    await dbInstance.execute(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS clothes_fts USING fts5(
+        cloth_id,
+        nickname,
+        type,
+        primary_color,
+        pattern,
+        material,
+        fit,
+        formality,
+        weather_suitability,
+        tags
+      )`
+    );
+
+    // Sync all FTS index on startup
+    await syncAllFts();
   }
   return dbInstance;
 }
 
+/**
+ * Synchronizes a single clothing item with the FTS5 index.
+ */
+export async function syncFts(clothId: number) {
+  try {
+    const conn = await initDb();
+    
+    // Fetch item details and its tags
+    const itemRows = await conn.select<any[]>(
+      `SELECT c.id, c.nickname, c.type, c.primary_color, c.pattern, c.material, c.fit, c.formality, c.weather_suitability,
+       (SELECT group_concat(t.name, ' ') FROM cloth_tags ct JOIN tags t ON ct.tag_id = t.id WHERE ct.cloth_id = c.id) as tags_list
+       FROM clothes c WHERE c.id = ?`,
+      [clothId]
+    );
+
+    if (itemRows.length === 0) {
+      // Item was deleted, remove from FTS5 index
+      await conn.execute(`DELETE FROM clothes_fts WHERE cloth_id = ?`, [clothId]);
+      return;
+    }
+
+    const item = itemRows[0];
+    const tagsStr = item.tags_list || "";
+
+    // Check if item already exists in FTS index
+    const checkRows = await conn.select<any[]>(
+      `SELECT 1 FROM clothes_fts WHERE cloth_id = ?`,
+      [clothId]
+    );
+
+    if (checkRows.length > 0) {
+      await conn.execute(
+        `UPDATE clothes_fts SET nickname = ?, type = ?, primary_color = ?, pattern = ?, material = ?, fit = ?, formality = ?, weather_suitability = ?, tags = ? WHERE cloth_id = ?`,
+        [
+          item.nickname || "",
+          item.type || "",
+          item.primary_color || "",
+          item.pattern || "",
+          item.material || "",
+          item.fit || "",
+          item.formality || "",
+          item.weather_suitability || "",
+          tagsStr,
+          clothId
+        ]
+      );
+    } else {
+      await conn.execute(
+        `INSERT INTO clothes_fts (cloth_id, nickname, type, primary_color, pattern, material, fit, formality, weather_suitability, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          clothId,
+          item.nickname || "",
+          item.type || "",
+          item.primary_color || "",
+          item.pattern || "",
+          item.material || "",
+          item.fit || "",
+          item.formality || "",
+          item.weather_suitability || "",
+          tagsStr
+        ]
+      );
+    }
+  } catch (err) {
+    console.error(`[FTS Sync] Failed for item ${clothId}:`, err);
+  }
+}
+
+/**
+ * Fully synchronizes all wardrobe items to the FTS5 index (typically on startup).
+ */
+export async function syncAllFts() {
+  try {
+    const conn = await initDb();
+    
+    // Clear FTS index
+    await conn.execute(`DELETE FROM clothes_fts`);
+
+    // Fetch all items and their tags
+    const items = await conn.select<any[]>(
+      `SELECT c.id, c.nickname, c.type, c.primary_color, c.pattern, c.material, c.fit, c.formality, c.weather_suitability,
+       (SELECT group_concat(t.name, ' ') FROM cloth_tags ct JOIN tags t ON ct.tag_id = t.id WHERE ct.cloth_id = c.id) as tags_list
+       FROM clothes c`
+    );
+
+    for (const item of items) {
+      const tagsStr = item.tags_list || "";
+      await conn.execute(
+        `INSERT INTO clothes_fts (cloth_id, nickname, type, primary_color, pattern, material, fit, formality, weather_suitability, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          item.id,
+          item.nickname || "",
+          item.type || "",
+          item.primary_color || "",
+          item.pattern || "",
+          item.material || "",
+          item.fit || "",
+          item.formality || "",
+          item.weather_suitability || "",
+          tagsStr
+        ]
+      );
+    }
+    console.info(`[FTS Sync] Re-indexed ${items.length} item(s) on startup`);
+  } catch (err) {
+    console.error("[FTS Sync] Full sync failed:", err);
+  }
+}
+
 // Custom Drizzle SQLite Proxy driver.
-// IMPORTANT: tauri-plugin-sql uses sqlx under the hood which uses positional '?'
-// placeholders for SQLite (NOT '$1,$2' which is for PostgreSQL).
-// Drizzle sqlite-proxy also generates '?' placeholders — so we pass SQL through as-is.
 export const db = drizzle(async (sql, params, method) => {
   const conn = await initDb();
 
@@ -32,11 +157,9 @@ export const db = drizzle(async (sql, params, method) => {
     const rows = await conn.select<Record<string, unknown>[]>(sql, params as unknown[]);
 
     if (method === "all") {
-      // Drizzle sqlite-proxy expects rows as arrays of values (positional), not objects
       return { rows: rows.map((row) => Object.values(row)) };
     }
 
-    // For 'get' method — return first row as array
     if (rows.length > 0) {
       return { rows: [Object.values(rows[0])] };
     }
