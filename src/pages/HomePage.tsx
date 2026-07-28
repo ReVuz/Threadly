@@ -1,197 +1,170 @@
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import UploadZone from "../components/upload/UploadZone";
-import { useQueue } from "../context/QueueContext";
-import { db } from "../lib/db";
-import { clothes } from "../../drizzle/schema";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { motion } from "framer-motion";
+import { eq } from "drizzle-orm";
+import { clothes } from "../../drizzle/schema";
+import { db } from "../lib/db";
+import { useQueue } from "../context/QueueContext";
+import { useWardrobe } from "../context/WardrobeContext";
+import {
+  getCollectionLinks,
+  getEditorialGreeting,
+  getRecentItems,
+  getWearAgainSuggestion,
+  type WardrobeItemSummary,
+} from "../lib/editorial";
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] } },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] as const } },
   exit: { opacity: 0, y: -8, transition: { duration: 0.15 } },
 };
 
-interface Stats {
-  total: number;
-  tops: number;
-  bottoms: number;
-  dresses: number;
-  jackets: number;
-  others: number;
-}
-
 export default function HomePage() {
-  const { addToQueue, isProcessing, isAnalyzing } = useQueue();
-  const [stats, setStats] = useState<Stats>({ total: 0, tops: 0, bottoms: 0, dresses: 0, jackets: 0, others: 0 });
-
-  const fetchStats = async () => {
-    try {
-      const allClothes = await db.select().from(clothes);
-      const newStats = { total: allClothes.length, tops: 0, bottoms: 0, dresses: 0, jackets: 0, others: 0 };
-      
-      allClothes.forEach((item) => {
-        const type = item.type?.toLowerCase();
-        if (type === "top") newStats.tops++;
-        else if (type === "bottom") newStats.bottoms++;
-        else if (type === "dress") newStats.dresses++;
-        else if (type === "jacket") newStats.jackets++;
-        else newStats.others++;
-      });
-      setStats(newStats);
-    } catch (err) {
-      console.error("Failed to fetch wardrobe stats:", err);
-    }
-  };
+  const { analysisQueue } = useQueue();
+  const { activeWardrobeId, activeWardrobeName } = useWardrobe();
+  const [items, setItems] = useState<WardrobeItemSummary[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchStats();
-  }, [isProcessing, isAnalyzing]);
+    let cancelled = false;
+
+    async function load() {
+      try {
+        setError(null);
+        const rows = await db.select().from(clothes).where(eq(clothes.wardrobeId, activeWardrobeId));
+        if (!cancelled) {
+          setItems(rows as WardrobeItemSummary[]);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!cancelled) {
+          setError(`Home dashboard failed to load wardrobe data: ${message}`);
+        }
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWardrobeId]);
+
+  const recentItems = useMemo(() => getRecentItems(items, 3), [items]);
+  const featuredItem = recentItems[0];
+  const suggestion = useMemo(() => getWearAgainSuggestion(items), [items]);
+  const collectionLinks = useMemo(() => getCollectionLinks(items), [items]);
+  const pendingItems = analysisQueue.filter((item) => item.aiStatus === "PENDING");
+
+  const greeting = useMemo(() => getEditorialGreeting(new Date(), items.length), [items.length]);
 
   return (
-    <motion.div
+    <motion.main
       variants={pageVariants}
       initial="initial"
       animate="animate"
       exit="exit"
-      style={{ padding: "48px 48px", minHeight: "100%", overflowY: "auto" }}
+      className="home-page"
     >
-      {/* Editorial Header */}
-      <div style={{ marginBottom: "48px" }}>
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "0.75rem",
-            color: "var(--accent)",
-            textTransform: "uppercase",
-            letterSpacing: "0.15em",
-            display: "block",
-            marginBottom: "8px",
-          }}
-        >
-          WARDROBE MANAGER
-        </span>
-        <h1
-          style={{
-            fontFamily: "var(--font-display)",
-            fontSize: "3.5rem",
-            fontWeight: 400,
-            lineHeight: 1.1,
-            color: "var(--primary)",
-            maxWidth: "600px",
-          }}
-        >
-          Curate Your Style, Effortlessly.
-        </h1>
-        <p
-          style={{
-            color: "var(--text-secondary)",
-            fontSize: "1.05rem",
-            marginTop: "16px",
-            maxWidth: "480px",
-            lineHeight: 1.6,
-          }}
-        >
-          Threadly organizes your wardrobe using AI background removal and smart attribute tagging to unlock your outfit potential.
+      <section className="home-hero">
+        <div className="home-hero__eyebrow">THREADLY / {activeWardrobeName}</div>
+        <div className="home-hero__heading">
+          <p className="home-hero__kicker">{greeting.title}</p>
+          <h1>{greeting.subtitle}</h1>
+        </div>
+        <p className="home-hero__lede">
+          A quiet magazine cover for the wardrobe you already own. One primary action, one primary story.
         </p>
-      </div>
+      </section>
 
-      {/* Stats Dashboard Grid */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: "20px",
-          marginBottom: "54px",
-        }}
-      >
-        <div className="card" style={{ padding: "24px", background: "var(--surface)" }}>
-          <h4 style={{ fontSize: "0.8rem", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-            Total Items
-          </h4>
-          <p style={{ fontFamily: "var(--font-display)", fontSize: "2.5rem", color: "var(--primary)", fontWeight: 500 }}>
-            {stats.total}
-          </p>
-        </div>
+      {error && <div className="page-error">{error}</div>}
 
-        <div className="card" style={{ padding: "24px", background: "var(--surface)" }}>
-          <h4 style={{ fontSize: "0.8rem", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-            Tops & Shirts
-          </h4>
-          <p style={{ fontFamily: "var(--font-display)", fontSize: "2.5rem", color: "var(--primary)", fontWeight: 500 }}>
-            {stats.tops}
-          </p>
-        </div>
-
-        <div className="card" style={{ padding: "24px", background: "var(--surface)" }}>
-          <h4 style={{ fontSize: "0.8rem", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-            Bottoms & Pants
-          </h4>
-          <p style={{ fontFamily: "var(--font-display)", fontSize: "2.5rem", color: "var(--primary)", fontWeight: 500 }}>
-            {stats.bottoms}
-          </p>
-        </div>
-
-        <div className="card" style={{ padding: "24px", background: "var(--surface)" }}>
-          <h4 style={{ fontSize: "0.8rem", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-            Dresses & Coats
-          </h4>
-          <p style={{ fontFamily: "var(--font-display)", fontSize: "2.5rem", color: "var(--primary)", fontWeight: 500 }}>
-            {stats.dresses + stats.jackets}
-          </p>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: "40px", alignItems: "start" }}>
-        {/* Upload Zone Section */}
-        <div>
-          <h3
-            style={{
-              fontFamily: "var(--font-display)",
-              fontSize: "1.75rem",
-              fontWeight: 500,
-              marginBottom: "20px",
-              color: "var(--primary)",
-            }}
-          >
-            Import Clothes
-          </h3>
-          <UploadZone onImportComplete={addToQueue} />
-        </div>
-
-        {/* Quick Actions Panel */}
-        <div
-          className="card"
-          style={{
-            padding: "24px",
-            background: "var(--surface-raised)",
-            borderColor: "var(--border-subtle)",
-          }}
-        >
-          <h3
-            style={{
-              fontFamily: "var(--font-display)",
-              fontSize: "1.25rem",
-              fontWeight: 600,
-              marginBottom: "16px",
-              color: "var(--primary)",
-            }}
-          >
-            Quick Curate
-          </h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <Link to="/wardrobe" className="btn btn-outline" style={{ justifyContent: "flex-start", width: "100%" }}>
-              Explore Wardrobe
+      <section className="home-grid">
+        <article className="home-feature card">
+          <div className="home-section__label">Recently Added</div>
+          {featuredItem ? (
+            <Link to={`/wardrobe/${featuredItem.id}`} className="home-feature__body">
+              <div className="home-feature__image">
+                <img
+                  src={convertFileSrc(featuredItem.imageProcessed || featuredItem.imageThumbnail || featuredItem.imageOriginal || "")}
+                  alt={featuredItem.nickname || "Clothing item"}
+                />
+              </div>
+              <div className="home-feature__content">
+                <p className="home-feature__title">{featuredItem.nickname || "Editorial Piece"}</p>
+                <p className="home-feature__meta">
+                  {featuredItem.type || "Unclassified"} · {featuredItem.primaryColor || "Neutral"}
+                </p>
+                <p className="home-feature__note">
+                  {featuredItem.material || "Unknown material"} · {featuredItem.formality || "everyday"}
+                </p>
+              </div>
             </Link>
-            <Link to="/outfits" className="btn btn-outline" style={{ justifyContent: "flex-start", width: "100%" }}>
-              Create Outfits
+          ) : (
+            <div className="empty-state empty-state--compact">
+              <h3>No garments yet</h3>
+              <p>Add your first piece to start building the cover story.</p>
+            </div>
+          )}
+        </article>
+
+        <aside className="home-aside">
+          <article className="home-panel card">
+            <div className="home-section__label">Wear Again</div>
+            {suggestion ? (
+              <>
+                <p className="home-panel__title">{suggestion.title}</p>
+                <p className="home-panel__subtle">{suggestion.subtitle}</p>
+                <p className="home-panel__note">{suggestion.reason}</p>
+              </>
+            ) : (
+              <p className="home-panel__note">No suggestion yet. Add more items to unlock a smarter pairing.</p>
+            )}
+          </article>
+
+          <article className="home-panel card">
+            <div className="home-section__label">Collections</div>
+            <div className="home-links">
+              {collectionLinks.map((link) => (
+                <Link key={link.label} to="/wardrobe" className="home-link">
+                  <span>{link.label}</span>
+                  <span className="home-link__meta">{link.count}</span>
+                </Link>
+              ))}
+            </div>
+          </article>
+        </aside>
+      </section>
+
+      <section className="home-recent">
+        <div className="home-section__label">Selected Pages</div>
+        <div className="home-recent__row">
+          {recentItems.map((item) => (
+            <Link key={item.id} to={`/wardrobe/${item.id}`} className="home-recent__card card">
+              <div className="home-recent__thumb">
+                <img src={convertFileSrc(item.imageThumbnail || item.imageProcessed || item.imageOriginal || "")} alt={item.nickname || "Clothing item"} />
+              </div>
+              <div className="home-recent__meta">
+                <p>{item.nickname || "Untitled piece"}</p>
+                <span>{item.type || "Unclassified"}</span>
+              </div>
             </Link>
-            <Link to="/discover" className="btn btn-primary" style={{ justifyContent: "flex-start", width: "100%" }}>
-              AI Wardrobe Analysis
-            </Link>
-          </div>
+          ))}
+          {recentItems.length === 0 && <div className="home-recent__empty">Nothing recent to show.</div>}
         </div>
-      </div>
-    </motion.div>
+      </section>
+
+      {pendingItems.length > 0 && (
+        <section className="home-pending">
+          <div className="home-section__label">Pending Analysis</div>
+          <ul className="home-pending__list">
+            {pendingItems.slice(0, 5).map((item) => (
+              <li key={`${item.id}-${item.aiStatus}`}>{item.nickname || `Item ${item.id}`} is waiting for analysis.</li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </motion.main>
   );
 }

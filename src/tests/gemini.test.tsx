@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { analyzeClothingImage, GeminiResponseSchema } from "../lib/gemini";
+import { analyzeClothingImage } from "../lib/gemini";
 import { readFile } from "@tauri-apps/plugin-fs";
 
 // Mock Tauri FS readFile
@@ -7,8 +7,8 @@ vi.mock("@tauri-apps/plugin-fs", () => ({
   readFile: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
 }));
 
-// Mock window.btoa (global.btoa in node)
-global.btoa = vi.fn().mockReturnValue("base64-mock-data");
+// Mock window.btoa (globalThis.btoa in node)
+globalThis.btoa = vi.fn().mockReturnValue("base64-mock-data");
 
 describe("Gemini API Client", () => {
   beforeEach(() => {
@@ -44,7 +44,7 @@ describe("Gemini API Client", () => {
       ],
     };
 
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce({
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
       ok: true,
       json: async () => mockApiResponse,
     } as Response);
@@ -53,7 +53,7 @@ describe("Gemini API Client", () => {
 
     expect(readFile).toHaveBeenCalledWith("/path/to/processed/item.webp");
     expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=test-api-key-12345"),
+      expect.stringContaining("https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=test-api-key-12345"),
       expect.any(Object)
     );
 
@@ -73,14 +73,15 @@ describe("Gemini API Client", () => {
   });
 
   it("throws error if API returns bad status", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce({
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
       ok: false,
       status: 400,
+      json: async () => ({ error: { message: "API Key invalid" } }),
       text: async () => "API Key invalid",
     } as Response);
 
     await expect(analyzeClothingImage("/path/to/image.png")).rejects.toThrow(
-      "Gemini API call failed with status 400"
+      "Gemini API call failed (400): API Key invalid"
     );
   });
 
@@ -107,7 +108,7 @@ describe("Gemini API Client", () => {
       ],
     };
 
-    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce({
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
       ok: true,
       json: async () => mockApiResponse,
     } as Response);
@@ -119,7 +120,7 @@ describe("Gemini API Client", () => {
     );
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining("models/gemini-2.5-flash:generateContent?key=test-api-key-12345"),
+      expect.stringContaining("models/gemini-3-flash-preview:generateContent?key=test-api-key-12345"),
       expect.any(Object)
     );
 

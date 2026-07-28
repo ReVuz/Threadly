@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
 import { relations, sql } from "drizzle-orm";
 
 /* ─── Wardrobes ─────────────────────────────────────────── */
@@ -81,18 +81,18 @@ export const tagsRelations = relations(tags, ({ many }) => ({
   clothes: many(clothTags),
 }));
 
-export const clothTags = sqliteTable("cloth_tags", {
-  clothId: integer("cloth_id")
-    .notNull()
-    .references(() => clothes.id, { onDelete: "cascade" }),
-  tagId: integer("tag_id")
-    .notNull()
-    .references(() => tags.id, { onDelete: "cascade" }),
-}, (t) => [
+export const clothTags = sqliteTable(
+  "cloth_tags",
   {
-    pk: [t.clothId, t.tagId],
-  }
-]);
+    clothId: integer("cloth_id")
+      .notNull()
+      .references(() => clothes.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.clothId, t.tagId] })]
+);
 
 export const clothTagsRelations = relations(clothTags, ({ one }) => ({
   cloth: one(clothes, {
@@ -116,18 +116,18 @@ export const seasonsRelations = relations(seasons, ({ many }) => ({
   clothes: many(clothSeasons),
 }));
 
-export const clothSeasons = sqliteTable("cloth_seasons", {
-  clothId: integer("cloth_id")
-    .notNull()
-    .references(() => clothes.id, { onDelete: "cascade" }),
-  seasonId: integer("season_id")
-    .notNull()
-    .references(() => seasons.id, { onDelete: "cascade" }),
-}, (t) => [
+export const clothSeasons = sqliteTable(
+  "cloth_seasons",
   {
-    pk: [t.clothId, t.seasonId],
-  }
-]);
+    clothId: integer("cloth_id")
+      .notNull()
+      .references(() => clothes.id, { onDelete: "cascade" }),
+    seasonId: integer("season_id")
+      .notNull()
+      .references(() => seasons.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.clothId, t.seasonId] })]
+);
 
 export const clothSeasonsRelations = relations(clothSeasons, ({ one }) => ({
   cloth: one(clothes, {
@@ -164,18 +164,18 @@ export const outfitsRelations = relations(outfits, ({ one, many }) => ({
   items: many(outfitItems),
 }));
 
-export const outfitItems = sqliteTable("outfit_items", {
-  outfitId: integer("outfit_id")
-    .notNull()
-    .references(() => outfits.id, { onDelete: "cascade" }),
-  clothId: integer("cloth_id")
-    .notNull()
-    .references(() => clothes.id, { onDelete: "cascade" }),
-}, (t) => [
+export const outfitItems = sqliteTable(
+  "outfit_items",
   {
-    pk: [t.outfitId, t.clothId],
-  }
-]);
+    outfitId: integer("outfit_id")
+      .notNull()
+      .references(() => outfits.id, { onDelete: "cascade" }),
+    clothId: integer("cloth_id")
+      .notNull()
+      .references(() => clothes.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.outfitId, t.clothId] })]
+);
 
 export const outfitItemsRelations = relations(outfitItems, ({ one }) => ({
   outfit: one(outfits, {

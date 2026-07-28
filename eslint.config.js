@@ -4,6 +4,9 @@ import reactPlugin from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
 
 export default tseslint.config(
+  {
+    ignores: ["src-tauri/target/**"],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

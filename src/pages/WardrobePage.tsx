@@ -1,360 +1,270 @@
-import { useEffect, useState, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { db } from "../lib/db";
-import { clothes, tags, clothTags } from "../../drizzle/schema";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQueue } from "../context/QueueContext";
+import { AnimatePresence, motion } from "framer-motion";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { clothes } from "../../drizzle/schema";
+import { db } from "../lib/db";
+import { useWardrobe } from "../context/WardrobeContext";
+import { eq } from "drizzle-orm";
+import { itemMatchesSearch } from "../lib/search";
+import { getRecentItems, type WardrobeItemSummary } from "../lib/editorial";
+import UploadZone from "../components/upload/UploadZone";
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] } },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] as const } },
   exit: { opacity: 0, y: -8, transition: { duration: 0.15 } },
 };
 
-interface ClothingItem {
-  id: number;
-  uuid: string;
-  nickname: string | null;
-  type: string | null;
-  primaryColor: string | null;
-  formality: string | null;
-  weatherSuitability: string | null;
-  imageOriginal: string;
-  imageProcessed: string | null;
-  imageThumbnail: string | null;
-  aiStatus: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
-}
+const FILTERS: Array<{ key: FilterKey; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "top", label: "Tops" },
+  { key: "bottom", label: "Bottoms" },
+  { key: "dress", label: "Dresses" },
+  { key: "jacket", label: "Layers" },
+  { key: "ethnic", label: "Ethnic" },
+];
+
+const COLOR_SWATCHES: Record<string, string> = {
+  black: "#111111",
+  white: "#f8f7f3",
+  ivory: "#f3eadf",
+  cream: "#efe2c7",
+  beige: "#d8c3a5",
+  brown: "#7d5638",
+  navy: "#1f2a44",
+  blue: "#59779b",
+  green: "#708c5d",
+  grey: "#8a8f98",
+  gray: "#8a8f98",
+  red: "#a33b3b",
+  pink: "#d79aa8",
+  yellow: "#d4b35f",
+  gold: "#c6a75e",
+};
+
+type FilterKey = "all" | "top" | "bottom" | "dress" | "jacket" | "ethnic";
 
 export default function WardrobePage() {
-  const { isProcessing, isAnalyzing } = useQueue();
-  const [items, setItems] = useState<ClothingItem[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string>("all");
-  const [activeColor, setActiveColor] = useState<string>("all");
-  const [activeFormality, setActiveFormality] = useState<string>("all");
-  const [activeWeather, setActiveWeather] = useState<string>("all");
+  const { activeWardrobeId } = useWardrobe();
+  const [items, setItems] = useState<WardrobeItemSummary[]>([]);
+  const [loadingError, setLoadingError] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<FilterKey>("all");
+  const [activeColor, setActiveColor] = useState("all");
+  const [activeFormality, setActiveFormality] = useState("all");
+  const [activeWeather, setActiveWeather] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-
-  const fetchItems = async () => {
-    try {
-      const data = await db.select().from(clothes);
-      setItems(data as ClothingItem[]);
-    } catch (err) {
-      console.error("Failed to load clothes:", err);
-    }
-  };
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
-    fetchItems();
-  }, [isProcessing, isAnalyzing]);
+    let cancelled = false;
 
-  // Extract unique filter options
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    items.forEach((item) => {
-      if (item.type) set.add(item.type);
-    });
-    return ["all", ...Array.from(set)];
-  }, [items]);
+    async function loadItems() {
+      try {
+        setLoadingError(null);
+        const rows = await db.select().from(clothes).where(eq(clothes.wardrobeId, activeWardrobeId));
+        if (!cancelled) {
+          setItems(rows as WardrobeItemSummary[]);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!cancelled) {
+          setLoadingError(`Wardrobe grid failed to load items: ${message}`);
+        }
+      }
+    }
+
+    loadItems();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWardrobeId, reloadToken]);
 
   const colors = useMemo(() => {
-    const set = new Set<string>();
-    items.forEach((item) => {
-      if (item.primaryColor) set.add(item.primaryColor);
-    });
-    return ["all", ...Array.from(set)];
+    return Array.from(new Set(items.map((item) => item.primaryColor).filter(Boolean))) as string[];
   }, [items]);
 
   const formalities = useMemo(() => {
-    const set = new Set<string>();
-    items.forEach((item) => {
-      if (item.formality) set.add(item.formality);
-    });
-    return ["all", ...Array.from(set)];
+    return Array.from(new Set(items.map((item) => item.formality).filter(Boolean))) as string[];
   }, [items]);
 
-  // Filter items
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      const matchesCategory = activeCategory === "all" || item.type === activeCategory;
-      const matchesColor = activeColor === "all" || item.primaryColor === activeColor;
-      const matchesFormality = activeFormality === "all" || item.formality === activeFormality;
-      const matchesWeather = activeWeather === "all" || item.weatherSuitability === activeWeather;
-      
-      const nicknameLower = (item.nickname || "").toLowerCase();
-      const typeLower = (item.type || "").toLowerCase();
-      const colorLower = (item.primaryColor || "").toLowerCase();
-      const matchesSearch =
-        searchQuery === "" ||
-        nicknameLower.includes(searchQuery.toLowerCase()) ||
-        typeLower.includes(searchQuery.toLowerCase()) ||
-        colorLower.includes(searchQuery.toLowerCase());
-
-      return matchesCategory && matchesColor && matchesFormality && matchesWeather && matchesSearch;
+      const categoryMatch = activeCategory === "all" || item.type === activeCategory;
+      const colorMatch = activeColor === "all" || item.primaryColor === activeColor;
+      const formalityMatch = activeFormality === "all" || item.formality === activeFormality;
+      const weatherMatch = activeWeather === "all" || item.weatherSuitability === activeWeather;
+      const searchMatch = itemMatchesSearch(item, searchQuery);
+      return categoryMatch && colorMatch && formalityMatch && weatherMatch && searchMatch;
     });
   }, [items, activeCategory, activeColor, activeFormality, activeWeather, searchQuery]);
 
+  const recentItems = useMemo(() => getRecentItems(filteredItems, 2), [filteredItems]);
+
+  const activeFilters = [
+    activeCategory !== "all" ? { label: activeCategory, clear: () => setActiveCategory("all") } : null,
+    activeColor !== "all" ? { label: activeColor, clear: () => setActiveColor("all") } : null,
+    activeFormality !== "all" ? { label: activeFormality, clear: () => setActiveFormality("all") } : null,
+    activeWeather !== "all" ? { label: activeWeather, clear: () => setActiveWeather("all") } : null,
+    searchQuery ? { label: `"${searchQuery}"`, clear: () => setSearchQuery("") } : null,
+  ].filter(Boolean) as Array<{ label: string; clear: () => void }>;
+
+  const handleImportComplete = () => {
+    setReloadToken((value) => value + 1);
+  };
+
   return (
-    <motion.div
-      variants={pageVariants}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-      style={{ padding: "48px 48px", minHeight: "100%", overflowY: "auto", display: "flex", flexDirection: "column" }}
-    >
-      {/* Title Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "36px" }}>
+    <motion.main className="wardrobe-page" variants={pageVariants} initial="initial" animate="animate" exit="exit">
+      <section className="wardrobe-upload card">
+        <div className="wardrobe-upload__header">
+          <div className="wardrobe-page__eyebrow">UPLOAD</div>
+          <h2>Add clothing</h2>
+          <p>Drop new pieces here. They will import, process, and re-index automatically.</p>
+        </div>
+        <UploadZone onImportComplete={handleImportComplete} />
+      </section>
+
+      <header className="wardrobe-page__header">
         <div>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "0.75rem",
-              color: "var(--accent)",
-              textTransform: "uppercase",
-              letterSpacing: "0.15em",
-              display: "block",
-              marginBottom: "8px",
-            }}
-          >
-            COLLECTION
-          </span>
-          <h1 style={{ fontFamily: "var(--font-display)", fontSize: "2.75rem", fontWeight: 500, color: "var(--primary)" }}>
-            The Wardrobe Grid
-          </h1>
+          <div className="wardrobe-page__eyebrow">EDITORIAL GRID</div>
+          <h1>The Wardrobe</h1>
         </div>
-        
-        {/* Search Input */}
-        <div style={{ width: "240px" }}>
-          <input
-            type="text"
-            className="input"
-            placeholder="Search items..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-      </div>
+        <input
+          className="input wardrobe-page__search"
+          placeholder="Search color, type, material..."
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+        />
+      </header>
 
-      {/* Filter Toolbar */}
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "12px",
-          paddingBottom: "24px",
-          borderBottom: "1px solid var(--border-subtle)",
-          marginBottom: "32px",
-        }}
-      >
-        {/* Category Filter */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          <span style={{ fontSize: "0.7rem", fontFamily: "var(--font-mono)", textTransform: "uppercase", color: "var(--text-tertiary)" }}>
-            Category
-          </span>
-          <select
-            className="input"
-            style={{ width: "140px", padding: "6px 12px" }}
-            value={activeCategory}
-            onChange={(e) => setActiveCategory(e.target.value)}
-          >
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {c === "all" ? "All Categories" : c.charAt(0).toUpperCase() + c.slice(1)}
-              </option>
-            ))}
-          </select>
-        </div>
+      {loadingError && <div className="page-error">{loadingError}</div>}
 
-        {/* Color Filter */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          <span style={{ fontSize: "0.7rem", fontFamily: "var(--font-mono)", textTransform: "uppercase", color: "var(--text-tertiary)" }}>
-            Color
-          </span>
-          <select
-            className="input"
-            style={{ width: "140px", padding: "6px 12px" }}
-            value={activeColor}
-            onChange={(e) => setActiveColor(e.target.value)}
-          >
-            {colors.map((col) => (
-              <option key={col} value={col}>
-                {col === "all" ? "All Colors" : col}
-              </option>
-            ))}
-          </select>
+      {activeFilters.length > 0 && (
+        <div className="wardrobe-page__chips">
+          {activeFilters.map((chip) => (
+            <button key={chip.label} className="filter-chip filter-chip--active" onClick={chip.clear}>
+              {chip.label}
+              <span aria-hidden="true">×</span>
+            </button>
+          ))}
         </div>
+      )}
 
-        {/* Formality Filter */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          <span style={{ fontSize: "0.7rem", fontFamily: "var(--font-mono)", textTransform: "uppercase", color: "var(--text-tertiary)" }}>
-            Formality
-          </span>
-          <select
-            className="input"
-            style={{ width: "140px", padding: "6px 12px" }}
-            value={activeFormality}
-            onChange={(e) => setActiveFormality(e.target.value)}
-          >
-            {formalities.map((form) => (
-              <option key={form} value={form}>
-                {form === "all" ? "All Occasions" : form}
-              </option>
-            ))}
-          </select>
-        </div>
+      <div className="wardrobe-layout">
+        <aside className="wardrobe-sidebar card">
+          <div className="wardrobe-sidebar__section">
+            <div className="wardrobe-sidebar__label">Categories</div>
+            <div className="wardrobe-sidebar__links">
+              <button className={activeCategory === "all" ? "filter-chip filter-chip--active" : "filter-chip"} onClick={() => setActiveCategory("all")}>
+                All
+              </button>
+              {FILTERS.slice(1).map((filter) => (
+                <button
+                  key={filter.key}
+                  className={activeCategory === filter.key ? "filter-chip filter-chip--active" : "filter-chip"}
+                  onClick={() => setActiveCategory(filter.key)}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-        {/* Weather Suitability Filter */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          <span style={{ fontSize: "0.7rem", fontFamily: "var(--font-mono)", textTransform: "uppercase", color: "var(--text-tertiary)" }}>
-            Weather
-          </span>
-          <select
-            className="input"
-            style={{ width: "140px", padding: "6px 12px" }}
-            value={activeWeather}
-            onChange={(e) => setActiveWeather(e.target.value)}
-          >
-            <option value="all">All Seasons</option>
-            <option value="warm-weather">Warm Weather</option>
-            <option value="cold-weather">Cold Weather</option>
-            <option value="all-season">All Season</option>
-          </select>
-        </div>
-      </div>
+          <div className="wardrobe-sidebar__section">
+            <div className="wardrobe-sidebar__label">Colors</div>
+            <div className="wardrobe-sidebar__swatches">
+              <button className={activeColor === "all" ? "swatch swatch--active" : "swatch"} onClick={() => setActiveColor("all")}>
+                All
+              </button>
+              {colors.map((color) => (
+                <button
+                  key={color}
+                  className={activeColor === color ? "swatch swatch--active" : "swatch"}
+                  onClick={() => setActiveColor(color)}
+                  title={color}
+                  aria-label={color}
+                >
+                  <span className="swatch__dot" style={{ background: COLOR_SWATCHES[color.toLowerCase()] || color }} />
+                </button>
+              ))}
+            </div>
+          </div>
 
-      {/* Grid List */}
-      {filteredItems.length === 0 ? (
-        <div className="empty-state">
-          <h3>No items found</h3>
-          <p>Try resetting your filters or add new clothing items to start curating.</p>
-        </div>
-      ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-            gap: "28px",
-          }}
-        >
-          <AnimatePresence>
-            {filteredItems.map((item) => {
-              // Convert native file system path to WebView-compatible URL
-              const imgUrl = convertFileSrc(item.imageThumbnail || item.imageOriginal);
-              
+          <div className="wardrobe-sidebar__section">
+            <div className="wardrobe-sidebar__label">Formality</div>
+            <div className="wardrobe-sidebar__links">
+              <button className={activeFormality === "all" ? "filter-chip filter-chip--active" : "filter-chip"} onClick={() => setActiveFormality("all")}>
+                All
+              </button>
+              {formalities.map((formality) => (
+                <button
+                  key={formality}
+                  className={activeFormality === formality ? "filter-chip filter-chip--active" : "filter-chip"}
+                  onClick={() => setActiveFormality(formality)}
+                >
+                  {formality}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="wardrobe-sidebar__section">
+            <div className="wardrobe-sidebar__label">Weather</div>
+            <div className="wardrobe-sidebar__links">
+              {["all", "warm-weather", "cold-weather", "all-season"].map((weather) => (
+                <button
+                  key={weather}
+                  className={activeWeather === weather ? "filter-chip filter-chip--active" : "filter-chip"}
+                  onClick={() => setActiveWeather(weather)}
+                >
+                  {weather === "all" ? "All" : weather.replace("-", " ")}
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        <section className="wardrobe-grid">
+          <AnimatePresence mode="popLayout">
+            {filteredItems.map((item, index) => {
+              const isHero = index === 0 || (index === 1 && recentItems.some((recent) => recent.id === item.id));
+              const imageSource = item.imageThumbnail || item.imageProcessed || item.imageOriginal || "";
+              const imageUrl = convertFileSrc(imageSource);
+
               return (
-                <motion.div
+                <motion.article
                   key={item.id}
                   layout
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.25 }}
-                  className="card"
-                  style={{
-                    background: "var(--surface)",
-                    overflow: "hidden",
-                    display: "flex",
-                    flexDirection: "column",
-                  }}
+                  className={isHero ? "wardrobe-card wardrobe-card--hero card" : "wardrobe-card card"}
+                  data-hero={isHero ? "true" : "false"}
                 >
-                  <Link to={`/wardrobe/${item.id}`} style={{ textDecoration: "none", color: "inherit", flex: 1, display: "flex", flexDirection: "column" }}>
-                    {/* Image frame */}
-                    <div
-                      style={{
-                        position: "relative",
-                        paddingBottom: "125%", // 4:5 aspect ratio
-                        background: "var(--surface-raised)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <img
-                        src={imgUrl}
-                        alt={item.nickname || "Clothing Item"}
-                        style={{
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          transition: "transform var(--duration-slow) var(--ease-out)",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.transform = "scale(1.05)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.transform = "scale(1)";
-                        }}
-                      />
-
-                      {/* AI Status Badge */}
-                      {item.aiStatus !== "COMPLETED" && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: 10,
-                            right: 10,
-                            background: "rgba(255, 255, 255, 0.85)",
-                            backdropFilter: "blur(4px)",
-                            padding: "4px 8px",
-                            borderRadius: "4px",
-                            fontSize: "0.65rem",
-                            fontWeight: 600,
-                            color: "var(--primary)",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 4,
-                          }}
-                        >
-                          <span className="status-dot status-processing" style={{ width: 6, height: 6 }} />
-                          {item.aiStatus}
-                        </div>
-                      )}
+                  <Link to={`/wardrobe/${item.id}`} className="wardrobe-card__link">
+                    <div className="wardrobe-card__media">
+                      <img src={imageUrl} alt={item.nickname || "Wardrobe item"} />
+                      <div className="wardrobe-card__shade" />
                     </div>
-
-                    {/* Metadata Card */}
-                    <div style={{ padding: "16px", flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                      <div>
-                        <h3
-                          style={{
-                            fontSize: "1rem",
-                            fontWeight: 500,
-                            color: "var(--text)",
-                            fontFamily: "var(--font-body)",
-                            marginBottom: 4,
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
-                          {item.nickname || "Clothing Item"}
-                        </h3>
-                        <p style={{ fontSize: "0.75rem", color: "var(--text-tertiary)", textTransform: "capitalize" }}>
-                          {item.type || "Unclassified"}
-                        </p>
-                      </div>
-
-                      {/* Tiny category metadata list */}
-                      <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
-                        {item.primaryColor && (
-                          <span className="badge badge-ghost" style={{ fontSize: "0.65rem", padding: "1px 6px" }}>
-                            {item.primaryColor}
-                          </span>
-                        )}
-                        {item.formality && (
-                          <span className="badge badge-ghost" style={{ fontSize: "0.65rem", padding: "1px 6px" }}>
-                            {item.formality}
-                          </span>
-                        )}
+                    <div className="wardrobe-card__body">
+                      <p className="wardrobe-card__name">{item.nickname || "Untitled piece"}</p>
+                      <p className="wardrobe-card__meta">{item.type || "Unclassified"}</p>
+                      <div className="wardrobe-card__facts">
+                        {item.primaryColor && <span>{item.primaryColor}</span>}
+                        {item.formality && <span>{item.formality}</span>}
                       </div>
                     </div>
                   </Link>
-                </motion.div>
+                </motion.article>
               );
             })}
           </AnimatePresence>
-        </div>
-      )}
-    </motion.div>
+
+          {filteredItems.length === 0 && (
+            <div className="empty-state wardrobe-grid__empty">
+              <h3>No items match the current filters</h3>
+              <p>Clear one chip above or add more garments to expand the editorial spread.</p>
+            </div>
+          )}
+        </section>
+      </div>
+    </motion.main>
   );
 }

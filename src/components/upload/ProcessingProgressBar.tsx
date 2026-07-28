@@ -44,7 +44,7 @@ export default function ProcessingProgressBar({ queue, isProcessing }: Processin
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span className="status-dot status-processing" />
-            <h4 style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: "1.1rem" }}>
+            <h4 style={{ fontFamily: "var(--font-display)", fontWeight: 500, fontSize: "1.1rem" }}>
               Processing Wardrobe
             </h4>
           </div>

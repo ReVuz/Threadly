@@ -78,6 +78,7 @@ export function WardrobeProvider({ children }: { children: ReactNode }) {
   }, [setActiveWardrobeId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshWardrobesList();
   }, [refreshWardrobesList]);
 

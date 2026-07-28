@@ -31,7 +31,8 @@ describe("DiscoverPage Component", () => {
   });
 
   it("renders empty state if no clothes exist", async () => {
-    vi.mocked(db.from).mockResolvedValueOnce([]); // No clothes
+    const mockDb = db as any;
+    mockDb.from.mockResolvedValueOnce([]); // No clothes
 
     render(<DiscoverPage />);
 
@@ -44,7 +45,8 @@ describe("DiscoverPage Component", () => {
     const mockClothesList = [
       { id: 1, type: "top", primaryColor: "black", formality: "casual", material: "cotton", pattern: "solid" }
     ];
-    vi.mocked(db.from).mockResolvedValueOnce(mockClothesList);
+    const mockDb = db as any;
+    mockDb.from.mockResolvedValueOnce(mockClothesList);
 
     const mockAnalysis = {
       colorBalance: [{ color: "black", percentage: 100 }],

@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/sqlite-proxy";
 import Database from "@tauri-apps/plugin-sql";
+import { buildFtsMatchQuery } from "./search";
 
 let dbInstance: Database | null = null;
 
@@ -142,6 +143,76 @@ export async function syncAllFts() {
   } catch (err) {
     console.error("[FTS Sync] Full sync failed:", err);
   }
+}
+
+export interface SearchResultRow {
+  id: number;
+  uuid: string;
+  nickname: string | null;
+  type: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  pattern: string | null;
+  material: string | null;
+  fit: string | null;
+  formality: string | null;
+  weatherSuitability: string | null;
+  imageOriginal: string;
+  imageProcessed: string | null;
+  imageThumbnail: string | null;
+  tagsText: string | null;
+  createdAt: string;
+}
+
+/**
+ * Runs a wardrobe search against the FTS index and falls back to recent wardrobe rows.
+ * The raw SQL is kept here so the UI can remain testable with a mocked `searchClothes`.
+ */
+export async function searchClothes(wardrobeId: number, query: string): Promise<SearchResultRow[]> {
+  const conn = await initDb();
+  const trimmedQuery = query.trim();
+
+  if (!trimmedQuery) {
+    return conn.select<SearchResultRow[]>(
+      `SELECT c.id, c.uuid, c.nickname, c.type, c.primary_color as primaryColor,
+              c.secondary_color as secondaryColor, c.pattern, c.material, c.fit,
+              c.formality, c.weather_suitability as weatherSuitability,
+              c.image_original as imageOriginal, c.image_processed as imageProcessed,
+              c.image_thumbnail as imageThumbnail,
+              (SELECT group_concat(t.name, ' ')
+               FROM cloth_tags ct
+               JOIN tags t ON t.id = ct.tag_id
+               WHERE ct.cloth_id = c.id) as tagsText,
+              c.created_at as createdAt
+       FROM clothes c
+       WHERE c.wardrobe_id = ?
+       ORDER BY c.created_at DESC`,
+      [wardrobeId]
+    );
+  }
+
+  const matchExpression = buildFtsMatchQuery(trimmedQuery);
+  if (!matchExpression) {
+    return [];
+  }
+
+  return conn.select<SearchResultRow[]>(
+    `SELECT c.id, c.uuid, c.nickname, c.type, c.primary_color as primaryColor,
+            c.secondary_color as secondaryColor, c.pattern, c.material, c.fit,
+            c.formality, c.weather_suitability as weatherSuitability,
+            c.image_original as imageOriginal, c.image_processed as imageProcessed,
+            c.image_thumbnail as imageThumbnail,
+            (SELECT group_concat(t.name, ' ')
+             FROM cloth_tags ct
+             JOIN tags t ON t.id = ct.tag_id
+             WHERE ct.cloth_id = c.id) as tagsText,
+            c.created_at as createdAt
+     FROM clothes c
+     JOIN clothes_fts fts ON fts.cloth_id = c.id
+     WHERE c.wardrobe_id = ? AND fts MATCH ?
+     ORDER BY c.created_at DESC`,
+    [wardrobeId, matchExpression]
+  );
 }
 
 // Custom Drizzle SQLite Proxy driver.

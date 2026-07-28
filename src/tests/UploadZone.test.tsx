@@ -79,7 +79,7 @@ describe("UploadZone Component", () => {
     vi.mocked(importImage).mockResolvedValueOnce(mockImport);
 
     // Mock db check return - empty means no duplicate
-    vi.mocked(db.where).mockResolvedValueOnce([]);
+    (db as any).where.mockResolvedValueOnce([]);
 
     const completeSpy = vi.fn();
     render(<UploadZone onImportComplete={completeSpy} />);

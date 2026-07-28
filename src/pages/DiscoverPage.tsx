@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { db } from "../lib/db";
 import { clothes } from "../../drizzle/schema";
 import { generateGapAnalysis, type GapAnalysisResponse } from "../lib/gemini";
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] } },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] as const } },
   exit: { opacity: 0, y: -8, transition: { duration: 0.15 } },
 };
 
@@ -57,6 +57,7 @@ export default function DiscoverPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     checkAndRunAnalysis();
   }, []);
 
