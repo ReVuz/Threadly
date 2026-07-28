@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import OutfitsPage from "../pages/OutfitsPage";
@@ -126,12 +126,10 @@ describe("OutfitsPage", () => {
       </MemoryRouter>
     );
 
-    const topButton = screen.getByText("Ivory Linen Shirt", { selector: "strong" }).closest("button");
-    const bottomButton = screen.getByText("Sand Trousers", { selector: "strong" }).closest("button");
-    expect(topButton).toBeTruthy();
-    expect(bottomButton).toBeTruthy();
-    if (topButton) fireEvent.click(topButton);
-    if (bottomButton) fireEvent.click(bottomButton);
+    await screen.findByText("Ivory Linen Shirt");
+
+    fireEvent.click(screen.getByRole("button", { name: /Ivory Linen Shirt/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Sand Trousers/i }));
 
     fireEvent.change(screen.getByLabelText("Outfit name"), { target: { value: "Summer Edit" } });
     fireEvent.change(screen.getByLabelText("Occasion"), { target: { value: "office" } });
@@ -157,6 +155,27 @@ describe("OutfitsPage", () => {
     );
   });
 
+  it("suggests an outfit and surfaces the reasoning in the board", async () => {
+    render(
+      <MemoryRouter>
+        <OutfitsPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Ivory Linen Shirt");
+
+    fireEvent.click(screen.getByRole("button", { name: "Suggest with AI" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Compatibility preview")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Ivory Linen Shirt · Sand Trousers · Navy Blazer")).toBeInTheDocument();
+    expect(screen.getByLabelText("Notes")).toHaveValue(
+      "The top and bottom pair well for monsoon with balanced formality and color harmony. A jacket layer strengthens the silhouette."
+    );
+  });
+
   it("updates favorite, rating, and delete actions for saved outfits", async () => {
     render(
       <MemoryRouter>
@@ -166,9 +185,16 @@ describe("OutfitsPage", () => {
 
     expect(await screen.findByText("Weekend Edit")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Favorite"));
-    fireEvent.click(screen.getByRole("button", { name: "★" }));
-    fireEvent.click(screen.getByText("Delete"));
+    const savedOutfit = screen.getByText("Weekend Edit").closest("article");
+    expect(savedOutfit).toBeTruthy();
+    if (!savedOutfit) {
+      throw new Error("Saved outfit card was not rendered");
+    }
+
+    const outfitCard = within(savedOutfit);
+    fireEvent.click(outfitCard.getByRole("button", { name: "Favorite" }));
+    fireEvent.click(outfitCard.getByRole("button", { name: "Rate Weekend Edit 1 star" }));
+    fireEvent.click(outfitCard.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
       expect(executeMock).toHaveBeenCalledWith(expect.stringContaining("UPDATE outfits SET favorite"), expect.any(Array));
@@ -177,4 +203,3 @@ describe("OutfitsPage", () => {
     expect(executeMock).toHaveBeenCalledWith("DELETE FROM outfits WHERE id = ?", [11]);
   });
 });
-

@@ -77,6 +77,8 @@ export default function OutfitsPage() {
   }, [activeWardrobeId]);
 
   useEffect(() => {
+    // Initial data hydration needs to update component state after the async query resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadData();
   }, [loadData]);
 
@@ -225,10 +227,10 @@ export default function OutfitsPage() {
             <p>{selectedItemIds.length > 0 ? selectedSummary : "Select garments from the wardrobe to build a board."}</p>
           </div>
           <div className="outfits-builder__actions">
-            <button className="btn btn-outline" onClick={handleSuggest}>
-              Suggest Outfit
+            <button type="button" className="btn btn-outline" onClick={handleSuggest}>
+              Suggest with AI
             </button>
-            <button className="btn btn-primary" onClick={handleCreateOutfit}>
+            <button type="button" className="btn btn-primary" onClick={handleCreateOutfit}>
               Save Outfit
             </button>
           </div>
@@ -331,7 +333,12 @@ export default function OutfitsPage() {
                   <h3>{outfit.name}</h3>
                   <p>{outfit.occasion || "No occasion set"}</p>
                 </div>
-                <button className="btn btn-ghost btn-sm" onClick={() => handleToggleFavorite(outfit.id, outfit.favorite)}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  aria-pressed={Boolean(outfit.favorite)}
+                  onClick={() => handleToggleFavorite(outfit.id, outfit.favorite)}
+                >
                   {outfit.favorite ? "Unfavorite" : "Favorite"}
                 </button>
               </div>
@@ -350,6 +357,7 @@ export default function OutfitsPage() {
                     key={star}
                     type="button"
                     className={star <= (outfit.rating || 0) ? "outfit-star outfit-star--active" : "outfit-star"}
+                    aria-label={`Rate ${outfit.name} ${star} star${star === 1 ? "" : "s"}`}
                     onClick={() => void handleRatingChange(outfit.id, star)}
                   >
                     ★
@@ -360,7 +368,7 @@ export default function OutfitsPage() {
               {outfit.notes && <p className="outfit-card__notes">{outfit.notes}</p>}
 
               <div className="outfit-card__actions">
-                <button className="btn btn-ghost btn-sm" onClick={() => handleDeleteOutfit(outfit.id)}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleDeleteOutfit(outfit.id)}>
                   Delete
                 </button>
               </div>
